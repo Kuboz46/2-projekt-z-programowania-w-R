@@ -1,0 +1,1656 @@
+---
+title: '[PADR-1920] Praca domowa nr 2.'
+author: "Jakub Zbrzezny"
+date: "3.12.2019"
+output: html_document
+---
+
+# Zadanie 1
+
+Do wykonania zadania 1 potrzebna będzie nam ramka danych z pliku Votes.csv. 
+Wczytujemy ją w następujący sposób:
+```{r}
+options(stringsAsFactors = FALSE)
+Votes <- read.csv("travel_stackexchange_com/Votes.csv")
+```
+```{r}
+head(Votes)
+```
+
+## 1. sqldf::sqldf().
+Najpierw 1 zadanie rozwiążemy przy pomocy pakietu ```sqldf``` .
+Potrzebny nam pakiet "sqldf". Instalujemy w następujący sposób:
+```{r}
+install.packages("sqldf")
+library(sqldf)
+```
+Rozwiązanie wygląda następująco:
+```{r}
+sqldf1_wynik <- sqldf("SELECT PostId, COUNT(*) AS UpVotes
+FROM Votes
+WHERE VoteTypeId = 2
+GROUP BY PostId")
+```
+Otrzymaliśmy następującą ramkę:
+```{r}
+head(sqldf1_wynik)
+```
+
+## 2. Tylko funkcje bazowe.
+Teraz to samo zadanie wykonamy wyłącznie przy pomocy funkcji bazowych.
+Najpierw ograniczamy ramkę Votes do osób, które mają idendyfikator głosu równy 2. Używamy notacji macierzowej (wybieramy tylko te wiersze, gdzie jest spełniony żądany warunek, a kolumny bierzemy wszystkie).
+```{r}
+df1 <- Votes[Votes$VoteTypeId == 2, ]
+```
+Musimy otrzymane dane grupować po zmiennej "PostId", wziąć kolumnę "PostId". Potrzebna nam jest do tego funkcja ```aggregate```.
+Jeszcze musimy nadać nazwy kolumn. Są nimi kolejno: "PostId", "UpVotes". Do tego możemy wykorzystać funkcję ```structure```.
+```{r}
+df1_wynik <- structure(aggregate(df1["PostId"], by = df1["PostId"], FUN = length),
+          names = c("PostId", "UpVotes"))
+```
+Nasza ramka wygląda następująco:
+```{r}
+head(df1_wynik)
+```
+A ramka wykonana za pomocą pakietu ```sqldf``` jest taka:
+```{r}
+head(sqldf1_wynik)
+```
+Wygląda, że rozwiązanie funkcjami bazowymi jest prawidłowe. Potwierdzimy to za pomocą polecenia ```dplyr::all_equal```
+```{r}
+dplyr::all_equal(sqldf1_wynik, df1_wynik)
+```
+Funkcja zwraca ```TRUE```, a zatem wykonaliśmy zadanie poprawnie.
+
+## 3. dplyr.
+Tym razem zrobimy zadanie z użyciem pakietu ```dplyr```.
+Musimy go zainstalować przed pierwszym jego użyciem. Robimy to za pomocą następujących komend:
+```{r}
+install.packages("dplyr")
+library(dplyr)
+```
+
+Do rozwiązania zadania przy pomocy tego pakietu, potrzebne będą funkcje ```select```, ```summarise```, ```group_by```, ```filter```. Wygląda ono następująco:
+
+```{r}
+dp1_wynik <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    UpVotes = n(),
+    
+  ) %>% filter(VoteTypeId == 2),
+  PostId,
+  UpVotes,
+) 
+```
+
+Funkcja ```summarise``` zestawia zmienne. Możemy w niej zagnieździć funkcję ```group_by```, która działa podobnie do funkcji bazowej ```aggregate```, jednakże sposób zapisu jest inny. Najpierw podajemy, z jakiej ramki danych są kolumny, potem podajemy, po jakich kolumnach grupujemy dane. Kod ```UpVotes = n()``` jest potrzebny do zrobienia kolumny o nazwie "UpVotes". ```n()``` liczy ile jest osób o odpowienim "PostId".
+Zestawione dane filtrujemy funkcją ```filter```. 
+Operator ```%>%``` jest operatorem potokowym, który pozwala na zastąpienie ciągów wywołań funkcji typu ```"f(g(h(x, y)), z, w)"``` zapisem ```"x %>% h(y) %>% g %>% f(z, w)"```.
+Na koniec podajemy, o jakie bierzemy kolumny.
+Oczywiście cały kod można zapisać w jednej linijce, jednak taki zapis byłby o wiele bardziej nieczytelny.
+
+Otrzymana ramka wygląda następująco:
+```{r}
+head(dp1_wynik)
+```
+Wyląda na to, że wyniki są prawidłowe, tak jak w dwóch poprzednich metodach. Sprawdzimy to taką funkcją jak wcześniej.
+```{r}
+dplyr::all_equal(df1_wynik, dp1_wynik)
+```
+Funkcja zwraca ```TRUE```, więc jest w porządku.
+
+## 4. data.table.
+Teraz zadanie zrobimy przy pomocy pakietu ```data.table```. Najpierw instalujemy pakiet w ten sposób:
+
+```{r}
+install.packages("data.table")
+library(data.table)
+```
+
+Rozwiązanie wygląda następująco:
+```{r}
+dt1_wynik <- as.data.table(Votes)[VoteTypeId == 2, .(UpVotes = .N), by = PostId][order(PostId)]
+```
+Korzystamy z funkcji ```as.data.table```. Dana funkcja sprawdza, czy obiekt jest postaci ```data.table```. Jeżeli nie jest, to zmienia, tak by był ```data.table```, jeśli to możliwe. Jako argument tej funkcji podajemy ramkę danych. Potem w nawiasach prostokątnych podajemy, jak filtrujemy dane. Zapis ```.(UpVotes = .N)``` oznacza, że liczymy osoby spełniające odpowiednie warunki i ilości tych osób podajemy w kolumnie o nazwie "UpVotes". Zapis ```by = ...``` oznacza, po czym agregujemy dane. ```[order(PostId)]``` mówi, że bierzemy wiersze w kolejności zgodnej z wartościami "PostId".
+
+Jak widać, zapis rozwiązania tym sposobem jest najkrótszy spośród wszystkich czterech podanych sposobów.
+
+Nasza ramka wygląda następująco:
+```{r}
+head(dt1_wynik)
+```
+
+Prawdopodobnie więc zrobiliśmy zadanie dobrze. Sprawdzimy to:
+```{r}
+dplyr::all_equal(dp1_wynik, dt1_wynik)
+```
+Mamy TRUE, a zatem jest prawidłowo.
+
+Wszystkie więc 4 sposoby rozwiązania są poprawne.
+
+## 5. Czasy wykonania napisanych wyrażeń.
+Porównamy czasy napisanych przez nas wyrażeń. Potrzebny jest nam pakiet "microbenchmark" Musimy go zainstalować.
+```
+install.packages("microbenchmark")
+library(microbenchmark)
+```
+
+Czasy porównamy przy pomocy następującego kodu:
+```{r echo = FALSE}
+rozwiazanie1_sqldf <- function()
+{
+  sqldf1_wynik <- sqldf("SELECT PostId, COUNT(*) AS UpVotes
+FROM Votes
+WHERE VoteTypeId = 2
+GROUP BY PostId")
+  return(sqldf1_wynik)
+}
+
+rozwiazanie1_bazowe <- function()
+{
+  df1 <- Votes[Votes$VoteTypeId == 2, ]
+  df1_wynik <- structure(aggregate(df1["PostId"], by = df1["PostId"], FUN =     length),
+          names = c("PostId", "UpVotes"))
+
+  dplyr::all_equal(sqldf1_wynik, df1_wynik)
+  return(df1_wynik)
+}
+
+rozwiazanie1_dplyr<- function()
+{
+  dp1_wynik <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    UpVotes = n(),
+    
+  ) %>% filter(VoteTypeId == 2),
+  PostId,
+  UpVotes,
+) 
+  return(dp1_wynik)
+}
+
+rozwiazanie1_datatable <- function()
+{
+  dt1_wynik <- as.data.table(Votes)[VoteTypeId == 2, .(UpVotes = .N), by = PostId][order(PostId)]
+  return(dt1_wynik)
+}
+```
+```
+microbenchmark::microbenchmark(
+  sqldf1 = rozwiazanie1_sqldf,
+  base1 = rozwiazanie1_bazowe,
+  dplyr1 = rozwiazanie1_dplyr,
+  data.table1 = rozwiazanie1_datatable
+)
+```
+
+, gdzie ```rozwiazanie1_sqldf, ..., rozwiazanie1_datatable``` są całymi kodami rozwiązań opakowanych w funkcje.
+
+
+```{r}
+microbenchmark::microbenchmark(
+  sqldf1 = rozwiazanie1_sqldf,
+  base1 = rozwiazanie1_bazowe,
+  dplyr1 = rozwiazanie1_dplyr,
+  data.table1 = rozwiazanie1_datatable
+)
+```
+Widzimy, że nie ma zasadniczej różnicy w czasie wykonania zadania daną metodą. 
+Najszybciej wykonano zadanie funkcjami bazowymi, a najwolniej funkcjami z pakietu ```data.table```. 
+Paradoks jest taki, że rozwiązanie przy pomocy funkcji bazowych ma najdłuższy zapis, a rozwiązanie z użyciem pakietu ```data.table``` ma najkrótszy zapis spośród wszystkich czterech rozwiązań.
+
+# Zadanie 2.
+
+Do zadania 2 potrzebna nam ramka ```Posts```.
+
+```{r}
+options(stringsAsFactors = FALSE)
+Posts <- read.csv("travel_stackexchange_com/Posts.csv")
+```
+
+```{r}
+head(Posts)
+```
+
+## 1. sqldf::sqldf().
+```{r}
+sqldf2_wynik <- sqldf("SELECT Title, Score, ViewCount, FavoriteCount
+      FROM Posts
+      WHERE PostTypeId = 1 AND FavoriteCount >= 25 AND ViewCount >= 10000")
+head(sqldf2_wynik)
+```
+
+## 2. Tylko funkcje bazowe.
+Filtrujemy ramkę Posts sposobem takim, jakim omówiliśmy w rozwiązaniu 1 zadania.
+```{r}
+df2 <- Posts[Posts$PostTypeId == 1 & Posts$FavoriteCount >= 25 & Posts$ViewCount >= 10000, ]
+```
+W funkcji ```sqldf``` w ogóle nie użyto polecenia ```GROUP BY```, zatem funkcja ```aggregate``` jest tu nam w ogóle niepotrzebna.
+Bierzemy odpowiednie kolumny, ale musimy jeszcze pozbyć się wartości ```NA```. Możemy to w prosty sposób zrobić funkcją ```na.omit``` jak poniżej.
+```{r}
+df2 <- Posts[Posts$PostTypeId == 1 & Posts$FavoriteCount >= 25 & Posts$ViewCount >= 10000, ]
+df2_wynik <- na.omit(df2[, c("Title", "Score", "ViewCount", "FavoriteCount")])
+```
+Taką otrzymaliśmy ramkę:
+```{r}
+head(df2_wynik)
+```
+Wygląda poprawnie, sprawdźmy:
+```{r}
+dplyr::all_equal(sqldf2_wynik, df2_wynik)
+```
+Mamy wartość ```TRUE``` więc jest dobrze.
+
+## 3. dplyr.
+Robimy to takimi funkcjami jak wcześniej:
+
+```{r}
+dp2_wynik <- select(
+  summarise(
+    group_by(
+      Posts,
+      Title,
+      Score,
+      ViewCount,
+      FavoriteCount,
+      PostTypeId
+    ))
+  %>% filter(PostTypeId == 1 & FavoriteCount >= 25 & ViewCount >= 10000),
+  Title,
+  Score, 
+  ViewCount,
+  FavoriteCount,
+)
+```
+
+```{r}
+head(dp2_wynik)
+```
+```{r}
+dplyr::all_equal(df2_wynik, dp2_wynik)
+```
+Jest więc w porządku.
+
+## 4. data.table.
+Z otrzymanej przefiltrowanej ramki bierzemy odpowiednie kolumny tak jak z macierzy.
+```{r}
+dt2_wynik <- as.data.table(Posts)[PostTypeId == 1 & FavoriteCount >= 25 & ViewCount >= 10000][,c("Title", "Score", "ViewCount", "FavoriteCount")]
+```
+
+```{r}
+head(dt2_wynik)
+```
+
+```{r}
+dplyr::all_equal(dp2_wynik, dt2_wynik)
+```
+
+Rozwiązanie jest więc poprawne.
+
+Zatem wszystkie rozwiązania są prawidłowe.
+
+## 5. Czasy wykonania napisanych wyrażeń.
+```{r echo = FALSE}
+rozwiazanie2_sqldf <- function()
+{
+  sqldf2_wynik <- sqldf("SELECT Title, Score, ViewCount, FavoriteCount
+      FROM Posts
+      WHERE PostTypeId = 1 AND FavoriteCount >= 25 AND ViewCount >= 10000")
+  return(sqldf2_wynik)
+}
+
+rozwiazanie2_bazowe <- function()
+{
+  df2 <- Posts[Posts$PostTypeId == 1 & Posts$FavoriteCount >= 25 & Posts$ViewCount >= 10000, ]
+df2_wynik <- na.omit(df2[, c("Title", "Score", "ViewCount", "FavoriteCount")])
+  return(df2_wynik)
+}
+
+rozwiazanie2_dplyr<- function()
+{
+  dp2_wynik <- select(
+  summarise(
+    group_by(
+      Posts,
+      Title,
+      Score,
+      ViewCount,
+      FavoriteCount,
+      PostTypeId
+    ))
+  %>% filter(PostTypeId == 1 & FavoriteCount >= 25 & ViewCount >= 10000),
+  Title,
+  Score, 
+  ViewCount,
+  FavoriteCount,
+)
+  return(dp2_wynik)
+}
+
+rozwiazanie2_datatable <- function()
+{
+  dt2_wynik <- as.data.table(Posts)[PostTypeId == 1 & FavoriteCount >= 25 & ViewCount >= 10000][,c("Title", "Score", "ViewCount", "FavoriteCount")]
+  return(dt2_wynik)
+}
+```
+```{r}
+microbenchmark::microbenchmark(
+  sqldf2 = rozwiazanie2_sqldf,
+  base2 = rozwiazanie2_bazowe,
+  dplyr2 = rozwiazanie2_dplyr,
+  data.table2 = rozwiazanie2_datatable
+)
+```
+Tym razem najszybciej zadanie wykonano pakietem ```dplyr```, a najwolniej pakietem ```sqldf```.
+
+# Zadanie 3.
+Wczytujemy ramkę ```Tags``` i ```Users```.
+```{r}
+options(stringsAsFactors = FALSE)
+Tags <- read.csv("travel_stackexchange_com/Tags.csv")
+```
+```{r}
+head(Tags)
+```
+
+```{r}
+options(stringsAsFactors = FALSE)
+Users <- read.csv("travel_stackexchange_com/Users.csv")
+```
+```{r}
+head(Users)
+```
+
+## 1. sqldf::sqldf().
+```{r}
+sqldf3_wynik <- sqldf("SELECT Tags.TagName, Tags.Count, Posts.OwnerUserId,
+      Users.Location, Users.DisplayName
+      FROM Tags
+      JOIN Posts ON Posts.Id = Tags.WikiPostId
+      JOIN Users ON Users.AccountId = Posts.OwnerUserId
+      WHERE OwnerUserId != -1
+      ORDER BY Count DESC LIMIT 10")
+```
+
+## 2. Tylko funkcje bazowe.
+Musimy złączyć ramki ```Posts``` i ```Users```. Potrzebna nam jest więc do tego funkcja ```merge```.
+Widzimy, że używamy ```inner_join```, więc argument ```all``` bierzemy jako ```FALSE```.
+Z fragmentu rozwiązania przy pomocy pakietu ```sqldf```:  ```JOIN Posts ON Posts.Id = Tags.WikiPostId```, widzimy, że, jeśli ```x = Posts, y = Users```, to za argument ```by.x``` bierzemy ```"OwnerUserId"```, a za ```by.y``` ```"AccountId```.
+```{r}
+PostsUsers <- merge(Posts, Users, all = FALSE, by.x = "OwnerUserId", by.y = "AccountId")
+```
+Teraz łączymy ramki ```PosUsers``` z ramką Tags, by mieć wszystkie potrzebne trzy ramki złączone w jedną. 
+```{r}
+TagsPostsUsers <- merge(Tags, PostsUsers,
+                        all = FALSE, 
+                        by.x = "WikiPostId", by.y = "Id.x")
+```
+Zapis ```"Id.x"``` oznacza, że bierzemy Id z pierwszego argumentu użytego w ```merge(Posts, Users, all = FALSE, by.x = "OwnerUserId", by.y = "AccountId")```.
+
+```{r}
+df3_wynik <- TagsPostsUsers[TagsPostsUsers["OwnerUserId"] != -1,
+                      c("TagName", "Count", "OwnerUserId", "Location", "DisplayName")]
+```      
+                  
+Posortowaliśmy malejąco względem kolumny Count i wybraliśmy pierwsze 10 wierszy.
+```{r}
+df3_wynik <- head(df3_wynik[order(-df3_wynik["Count"]),],10)
+```
+```{r}
+head(df3_wynik)
+```
+```{r}
+dplyr::all_equal(sqldf3_wynik, df3_wynik)
+```
+Zatem jest poprawnie.
+
+## 3. dplyr.
+W pakiecie ```dplyr``` łączymy ramki danych funkją ```inner_join```.
+```{r}
+dp_PostsUsers <- inner_join(Posts, Users, by = c("OwnerUserId" = "AccountId"))
+
+dp_TagsPostsUsers <- inner_join(Tags, dp_PostsUsers, by = c("WikiPostId" = "Id.x"))
+
+dp3 <- dp_TagsPostsUsers %>% filter(OwnerUserId != -1)
+
+wybor <- select(dp3, TagName, Count, OwnerUserId, Location, DisplayName)
+
+dp3_wynik <- head(wybor %>% arrange(desc(Count)), 10)
+```
+
+```{r}
+head(dp3_wynik)
+```
+
+```{r}
+dplyr::all_equal(df3_wynik, dp3_wynik)
+```
+Jest więc dobrze.
+
+## 4. data.table.
+W pakiecie ```data.table``` ramki łączymy funkcją ```merge.data.table```.
+```{r}
+dt_PostsUsers <- merge.data.table(Posts, Users, all= FALSE, by.x = "OwnerUserId", by.y = "AccountId")
+dt_TagsPostsUsers <- merge.data.table(Tags, dt_PostsUsers, all = FALSE, by.x = "WikiPostId", by.y = "Id.x")
+
+dt3 <- as.data.table(dt_TagsPostsUsers )[OwnerUserId != -1, 
+                                         by = c(TagName, Count, OwnerUserId, Location, DisplayName)][,
+                                         c("TagName", "Count", "OwnerUserId", "Location", "DisplayName")]
+```
+
+Jeśli ramkę ```x``` chcemy posortować rosnąco względem ```a```, to używamy następującej komendy:
+```
+setorder(x, a)
+```
+A jeżeli chcemy uporządkować malejąco względem ```a```, to w powyższej komendzie przed ```a``` dopisujemy minusa.
+
+Do sortowania względem Count malejąco używamy więc następującego kodu:
+```{r}
+setorder(dt3, -Count)
+```
+
+Ostatecznie:
+```{r}
+dt3_wynik <- head(dt3, 10)
+```
+
+```{r}
+head(dt3_wynik)
+```
+
+```{r}
+dplyr::all_equal(dp3_wynik, dt3_wynik)
+```
+Zatem jest prawidłowo.
+
+Czyli wszystkie rozwiązania są prawidłowe.
+
+## 5. Czasy wykonania napisanych wyrażeń.
+```{r echo = FALSE}
+rozwiazanie3_sqldf <- function()
+{
+  sqldf3_wynik <- sqldf("SELECT Tags.TagName, Tags.Count, Posts.OwnerUserId,
+      Users.Location, Users.DisplayName
+      FROM Tags
+      JOIN Posts ON Posts.Id = Tags.WikiPostId
+      JOIN Users ON Users.AccountId = Posts.OwnerUserId
+      WHERE OwnerUserId != -1
+      ORDER BY Count DESC LIMIT 10")
+  return(sqldf3_wynik)
+}
+
+rozwiazanie3_bazowe <- function()
+{
+  PostsUsers <- merge(Posts, Users, all = FALSE, by.x = "OwnerUserId", by.y = "AccountId")
+TagsPostsUsers <- merge(Tags, PostsUsers,
+                        all = FALSE, 
+                        by.x = "WikiPostId", by.y = "Id.x")
+
+df3 <- TagsPostsUsers[TagsPostsUsers["OwnerUserId"] != -1,
+                      c("TagName", "Count", "OwnerUserId", "Location", "DisplayName")]
+df3_wynik <- head(df3[order(-df3["Count"]),],10)
+return(df3_wynik)
+}
+
+rozwiazanie3_dplyr <- function()
+{
+  dp_PostsUsers <- inner_join(Posts, Users, by = c("OwnerUserId" = "AccountId"))
+
+dp_TagsPostsUsers <- inner_join(Tags, dp_PostsUsers, by = c("WikiPostId" = "Id.x"))
+
+dp3 <- dp_TagsPostsUsers %>% filter(OwnerUserId != -1)
+
+wybor <- select(dp3, TagName, Count, OwnerUserId, Location, DisplayName)
+
+dp3_wynik <- head(wybor %>% arrange(desc(Count)), 10)
+
+return(dp3_wynik)
+}
+
+rozwiazanie3_datatable <- function()
+{
+  dt_PostsUsers <- merge.data.table(Posts, Users, all= FALSE, by.x = "OwnerUserId", by.y = "AccountId")
+dt_TagsPostsUsers <- merge.data.table(Tags, dt_PostsUsers, all = FALSE, by.x = "WikiPostId", by.y = "Id.x")
+
+dt3 <- as.data.table(dt_TagsPostsUsers )[OwnerUserId != -1, 
+                                         by = c(TagName, Count, OwnerUserId, Location, DisplayName)][,
+                                         c("TagName", "Count", "OwnerUserId", "Location", "DisplayName")]
+
+setorder(dt3, -Count)
+
+dt3_wynik <- head(dt3, 10)
+
+return(dt3_wynik)
+}
+```
+```{r}
+microbenchmark::microbenchmark(
+  sqldf3 = rozwiazanie3_sqldf,
+  base3 = rozwiazanie3_bazowe,
+  dplyr3 = rozwiazanie3_dplyr,
+  data.table3 = rozwiazanie3_datatable
+)
+```
+Tym razem najszybciej zadanie rozwiązano pakietem ```data.table```, a najwolniej ```dplyr```.
+
+# Zadanie 4.
+Wczytujemy ramkę ```PostLinks```.
+```{r}
+PostLinks <- read.csv("travel_stackexchange_com/PostLinks.csv")
+PostLinks
+```
+```{r}
+head(PostLinks)
+```
+
+## 1. sqldf::sqldf().
+```{r}
+sqldf4_wynik <- sqldf("SELECT Posts.Title, RelatedTab.NumLinks FROM
+      (SELECT RelatedPostId AS PostId, COUNT(*) AS NumLinks
+      FROM PostLinks GROUP BY RelatedPostId) AS RelatedTab
+      JOIN Posts ON RelatedTab.PostId = Posts.Id
+      WHERE Posts.PostTypeId = 1
+      ORDER BY NumLinks DESC LIMIT 10")
+```
+
+```{r}
+head(sqldf4_wynik)
+```
+
+## 2. Tylko funkcje bazowe.
+```{r}
+RelatedTab <- structure(aggregate(PostLinks["RelatedPostId"], by= PostLinks["RelatedPostId"], FUN = length),
+                        names = c("PostId", "NumLinks"))
+
+df4_merge <- merge(Posts, RelatedTab, all = FALSE, by.x = "Id", by.y = "PostId")
+
+wyn_przed_sort <- df4_merge[df4_merge["PostTypeId"] == 1, c("Title", "NumLinks")]
+wyn_przed_sort$NumLinks
+df4_wynik <- head(wyn_przed_sort[order(-wyn_przed_sort["NumLinks"]), ], 10)
+```
+
+```{r}
+head(df4_wynik)
+```
+
+```{r}
+dplyr::all_equal(sqldf4_wynik, df4_wynik)
+```
+Stąd jest ok.
+
+## 3. dplyr.
+```{r}
+RelatedTab <- select(
+  summarise(
+    group_by(
+      PostLinks,
+      RelatedPostId
+    ),
+    NumLinks = n(),
+  ),
+  PostId = RelatedPostId,
+  NumLinks
+)
+
+dp4_merge <-inner_join(Posts, RelatedTab, by = c("Id" = "PostId"))
+
+dp4_filtr <- dp4_merge %>% filter(PostTypeId == 1)
+
+dp4_wybor <- select(dp4_filtr, Title, NumLinks)
+
+dp4_sortowanie <- dp4_wybor %>% arrange(desc(NumLinks))
+
+dp4_wynik <- head(dp4_sortowanie, 10)
+```
+
+```{r}
+head(dp4_wynik)
+```
+
+```{r}
+dplyr::all_equal(df4_wynik, dp4_wynik)
+```
+Jest zatem dobrze.
+
+## 4. data.table.
+```{r}
+RelatedTab <- as.data.table(PostLinks)[, .(NumLinks = .N), by = RelatedPostId][order(RelatedPostId)]
+
+setnames(RelatedTab, "RelatedPostId", "PostId")
+
+dt4_merge <- merge.data.table(Posts, RelatedTab, all = FALSE, by.x = "Id", by.y = "PostId")
+
+dt4 <- as.data.table(dt4_merge)[PostTypeId == 1][, c("Title", "NumLinks")]
+
+setorder(dt4, -NumLinks)
+
+dt4_wynik <- head(dt4, 10)
+```
+
+```{r}
+head(dt4_wynik)
+```
+
+```{r}
+dplyr::all_equal(dp4_wynik, dt4_wynik)
+```
+Jest więc ok.
+
+Stąd wszystkie rozwiązania są poprawne.
+
+## 5. Czasy wykonania napisanych wyrażeń.
+```{r echo = FALSE}
+rozwiazanie4_sqldf <- function()
+{
+  sqldf4_wynik <- sqldf("SELECT Posts.Title, RelatedTab.NumLinks FROM
+      (SELECT RelatedPostId AS PostId, COUNT(*) AS NumLinks
+      FROM PostLinks GROUP BY RelatedPostId) AS RelatedTab
+      JOIN Posts ON RelatedTab.PostId = Posts.Id
+      WHERE Posts.PostTypeId = 1
+      ORDER BY NumLinks DESC LIMIT 10")
+  return(sqldf4_wynik)
+}
+
+rozwiazanie4_bazowe <- function()
+{
+  RelatedTab <- structure(aggregate(PostLinks["RelatedPostId"], by= PostLinks["RelatedPostId"], FUN = length),
+                        names = c("PostId", "NumLinks"))
+
+df4_merge <- merge(Posts, RelatedTab, all = FALSE, by.x = "Id", by.y = "PostId")
+
+wyn_przed_sort <- df4_merge[df4_merge["PostTypeId"] == 1, c("Title", "NumLinks")]
+wyn_przed_sort$NumLinks
+df4_wynik <- head(wyn_przed_sort[order(-wyn_przed_sort["NumLinks"]), ], 10)
+return(df4_wynik)
+}
+
+rozwiazanie4_dplyr <- function()
+{
+  RelatedTab <- select(
+  summarise(
+    group_by(
+      PostLinks,
+      RelatedPostId
+    ),
+    NumLinks = n(),
+  ),
+  PostId = RelatedPostId,
+  NumLinks
+)
+
+dp4_merge <-inner_join(Posts, RelatedTab, by = c("Id" = "PostId"))
+
+dp4_filtr <- dp4_merge %>% filter(PostTypeId == 1)
+
+dp4_wybor <- select(dp4_filtr, Title, NumLinks)
+
+dp4_sortowanie <- dp4_wybor %>% arrange(desc(NumLinks))
+
+dp4_wynik <- head(dp4_sortowanie, 10)
+
+return(dp4_wynik)
+}
+
+rozwiazanie4_datatable <- function()
+{
+  RelatedTab <- as.data.table(PostLinks)[, .(NumLinks = .N), by = RelatedPostId][order(RelatedPostId)]
+
+setnames(RelatedTab, "RelatedPostId", "PostId")
+
+dt4_merge <- merge.data.table(Posts, RelatedTab, all = FALSE, by.x = "Id", by.y = "PostId")
+
+dt4 <- as.data.table(dt4_merge)[PostTypeId == 1][, c("Title", "NumLinks")]
+
+setorder(dt4, -NumLinks)
+
+dt4_wynik <- head(dt4, 10)
+
+return(dt4_wynik)
+}
+``` 
+```{r}
+microbenchmark::microbenchmark(
+  sqldf4 = rozwiazanie4_sqldf,
+  base4 = rozwiazanie4_bazowe,
+  dplyr4 = rozwiazanie4_dplyr,
+  data.table4 = rozwiazanie4_datatable
+)
+```
+Czas rozwiązania przy pomocy pakiety ```dplyr``` jest znacząco większy od wszystkich pozostałych metod.
+
+Czyli najwolniejsza jest metoda z pakietem ```dplyr```, a najszybsza z pakietem ```sqldf```.
+
+# Zadanie 5.
+
+## 1. sqldf::sqldf().
+```{r}
+sqldf5_wynik <- sqldf("SELECT UpVotesTab.*, Posts.Title FROM
+      (
+      SELECT PostId, COUNT(*) AS UpVotes FROM Votes WHERE VoteTypeId = 2 GROUP BY PostId
+      ) AS UpVotesTab
+      JOIN Posts ON UpVotesTab.PostId = Posts.Id
+      WHERE Posts.PostTypeId = 1
+      ORDER BY UpVotesTab.UpVotes DESC LIMIT 10")
+```
+
+```{r}
+head(sqldf5_wynik)
+```
+
+## 2. Tylko funkcje bazowe.
+```{r}
+df5 <- Votes[Votes$VoteTypeId == 2, ]
+UpVotesTab <- structure(aggregate(df5["PostId"], by = df5["PostId"],
+                               FUN = length),
+                     names = c("PostId", "UpVotes"))
+
+df5_merge <- merge(UpVotesTab, Posts, all = FALSE, by.x = "PostId", by.y = "Id") 
+
+UpVotesTabPosts <- df5_merge[df5_merge["PostTypeId"] == 1, c("PostId", "UpVotes", "Title")]
+
+wynik <- UpVotesTabPosts[order(-UpVotesTabPosts["UpVotes"]), ]
+
+df5_wynik <- head(wynik, 10)
+```
+
+```{r}
+head(df5_wynik)
+```
+
+```{r}
+dplyr::all_equal(sqldf5_wynik, df5_wynik)
+```
+Zatem jest w porządku.
+
+## 3. dplyr.
+```{r}
+UpVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    UpVotes = n(),
+  ) %>% filter(VoteTypeId == 2),
+  PostId,
+  UpVotes
+)
+
+dp5_merge <- inner_join(UpVotesTab, Posts, by = c("PostId" = "Id"))
+
+UpVotesTabPosts <- dp5_merge %>% filter(PostTypeId == 1)
+
+dp5_wybor <- select(UpVotesTabPosts, PostId, UpVotes, Title)
+
+dp5_sortowanie <- dp5_wybor %>% arrange(desc(UpVotes))
+
+dp5_wynik <- head(dp5_sortowanie, 10)
+```
+
+```{r}
+head(dp5_wynik)
+```
+
+```{r}
+dplyr::all_equal(df5_wynik, dp5_wynik)
+```
+Czyli jest poprawnie.
+
+## 4. data.table.
+```{r}
+dt5_UpVotesTab <- as.data.table(Votes)[VoteTypeId == 2, .(UpVotes = .N), by = PostId][order(PostId)]
+
+dt5_merge <- merge.data.table(dt5_UpVotesTab, Posts, all = FALSE, by.x = "PostId", by.y = "Id")
+
+dt5_filtr <- as.data.table(dt5_merge)[PostTypeId == 1][, c("PostId", "UpVotes", "Title")]
+
+setorder(dt5_filtr, -UpVotes)
+
+dt5_wynik <- head(dt5_filtr, 10)
+```
+
+```{r}
+head(dt5_wynik)
+```
+
+```{r}
+dplyr::all_equal(dp5_wynik, dt5_wynik)
+```
+Czyli jest ok.
+
+Stąd wszystkie rozwiązania są poprawne.
+
+## 5. Czasy wykonania napisanych wyrażeń.
+```{r echo = FALSE}
+rozwiazanie5_sqldf <- function()
+{
+  sqldf5_wynik <- sqldf("SELECT UpVotesTab.*, Posts.Title FROM
+      (
+      SELECT PostId, COUNT(*) AS UpVotes FROM Votes WHERE VoteTypeId = 2 GROUP BY PostId
+      ) AS UpVotesTab
+      JOIN Posts ON UpVotesTab.PostId = Posts.Id
+      WHERE Posts.PostTypeId = 1
+      ORDER BY UpVotesTab.UpVotes DESC LIMIT 10")
+  return(sqldf5_wynik)
+}
+
+rozwiazanie5_bazowe <- function()
+{
+  df5 <- Votes[Votes$VoteTypeId == 2, ]
+UpVotesTab <- structure(aggregate(df5["PostId"], by = df5["PostId"],
+                               FUN = length),
+                     names = c("PostId", "UpVotes"))
+
+df5_merge <- merge(UpVotesTab, Posts, all = FALSE, by.x = "PostId", by.y = "Id") 
+
+UpVotesTabPosts <- df5_merge[df5_merge["PostTypeId"] == 1, c("PostId", "UpVotes", "Title")]
+
+wynik <- UpVotesTabPosts[order(-UpVotesTabPosts["UpVotes"]), ]
+
+df5_wynik <- head(wynik, 10)
+
+return(df5_wynik)
+}
+rozwiazanie5_dplyr <- function()
+{
+  UpVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    UpVotes = n(),
+  ) %>% filter(VoteTypeId == 2),
+  PostId,
+  UpVotes
+)
+
+dp5_merge <- inner_join(UpVotesTab, Posts, by = c("PostId" = "Id"))
+
+UpVotesTabPosts <- dp5_merge %>% filter(PostTypeId == 1)
+
+dp5_wybor <- select(UpVotesTabPosts, PostId, UpVotes, Title)
+
+dp5_sortowanie <- dp5_wybor %>% arrange(desc(UpVotes))
+
+dp5_wynik <- head(dp5_sortowanie, 10)
+
+return(dp5_wynik)
+}
+
+rozwiazanie5_datatable <- function()
+{
+  dt5_UpVotesTab <- as.data.table(Votes)[VoteTypeId == 2, .(UpVotes = .N), by = PostId][order(PostId)]
+
+dt5_merge <- merge.data.table(dt5_UpVotesTab, Posts, all = FALSE, by.x = "PostId", by.y = "Id")
+
+dt5_filtr <- as.data.table(dt5_merge)[PostTypeId == 1][, c("PostId", "UpVotes", "Title")]
+
+setorder(dt5_filtr, -UpVotes)
+
+dt5_wynik <- head(dt5_filtr, 10)
+  
+  return(dt5_wynik)
+}
+```
+
+```{r}
+microbenchmark::microbenchmark(
+  sqldf5 = rozwiazanie5_sqldf,
+  base5 = rozwiazanie5_bazowe,
+  dplyr5 = rozwiazanie5_dplyr,
+  data.table5 = rozwiazanie5_datatable
+)
+```
+Zatem w tym przypadku metoda z pakietem ```data.table``` działa wyraźnie wolniej od pozostałych. Stąd tu najszybszą metodą jest metoda z funkcjami bazowymi, a najwolniejsza z ```data.table```.
+
+# Zadanie 6.
+
+## 1. sqldf::sqldf().
+```{r}
+sqldf6_wynik <- sqldf("SELECT UpVotesTab.PostId, UpVotesTab.UpVotes, IFNULL(DownVotesTab.DownVotes, 0) AS DownVotes
+      FROM
+      (
+      SELECT PostId, COUNT(*) AS UpVotes FROM Votes
+      WHERE VoteTypeId = 2 GROUP BY PostId
+      ) AS UpVotesTab
+      LEFT JOIN
+      (
+      SELECT PostId, COUNT(*) AS DownVotes FROM Votes
+      WHERE VoteTypeId = 3 GROUP BY PostId
+      ) AS DownVotesTab
+      ON UpVotesTab.PostId = DownVotesTab.PostId")
+```
+
+## 2. Tylko funkcje bazowe.
+```{r}
+df6_left <- Votes[Votes$VoteTypeId == 2, ]
+
+df6_UpVotesTab <- structure(aggregate(df6_left["PostId"], by = df6_left["PostId"],
+                                      FUN = length),
+                            names = c("PostId", "UpVotes"))
+
+df6_right <- Votes[Votes$VoteTypeId == 3, ]
+
+df6_DownVotesTab <- structure(aggregate(df6_right["PostId"], by = df6_right["PostId"],
+                                        FUN = length),
+                              names = c("PostId", "DownVotes"))
+```
+W rozwiązaniu pakietem ```sqldf``` przy łączeniu ramek użyliśmy funkcji ```LEFT JOIN```, więc w funkcji merge za argument ```all.x``` bierzemy ```TRUE```, a za ```all.y``` bierzemy ```FALSE.
+```{r}
+df6_merge <- merge(df6_UpVotesTab, df6_DownVotesTab, all.x = TRUE, all.y = FALSE, by = "PostId") 
+
+wart_null <- is.na(df6_merge["DownVotes"])
+
+df6_merge$DownVotes[wart_null] <- as.integer(0)
+
+df6_wynik <- df6_merge
+```
+
+```{r}
+head(df6_wynik)
+```
+
+```{r}
+dplyr::all_equal(sqldf6_wynik, df6_wynik)
+```
+Mamy ```TRUE```, więc jest ok.
+
+## 3. dplyr.
+```{r}
+dp6_UpVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    UpVotes = n(),
+  ) %>% filter(VoteTypeId == 2),
+  PostId,
+  UpVotes
+)
+
+dp6_DownVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    DownVotes = n(),
+  ) %>% filter(VoteTypeId == 3),
+  PostId,
+  DownVotes
+)
+
+dp6_merge <- left_join(dp6_UpVotesTab, dp6_DownVotesTab, by = "PostId")
+
+dp6_wart_null <- is.na(dp6_merge["DownVotes"])
+
+dp6_merge$DownVotes[dp6_wart_null] <- as.integer(0)
+
+dp6_wynik <- dp6_merge
+```
+
+```{r}
+head(dp6_wynik)
+```
+
+```{r}
+dplyr::all_equal(df6_wynik, dp6_wynik)
+```
+Zwracana jest wartość ```TRUE```, zatem jest dobrze.
+
+## 4. data.table.
+```{r}
+dt6_UpVotesTab <- as.data.table(Votes)[VoteTypeId == 2, .(UpVotes = .N), by = PostId][order(PostId)]
+
+dt6_DownVotesTab <- as.data.table(Votes)[VoteTypeId == 3, .(DownVotes = .N), by = PostId][order(PostId)]
+
+dt6_merge <- merge.data.table(dt6_UpVotesTab, dt6_DownVotesTab, all.x = TRUE, all.y = FALSE,
+                              by = "PostId")
+
+dt6_wart_null <- is.na(dt6_merge$DownVotes)
+
+dt6_merge$DownVotes[dt6_wart_null] <- as.integer(0)
+
+dt6_wynik <- dt6_merge
+```
+
+```{r}
+head(dt6_wynik)
+```
+
+```{r}
+dplyr::all_equal(dp6_wynik, dt6_wynik)
+```
+Czyli jest ok.
+
+Stąd wszystkie rozwiązania są poprawne.
+
+## 5. Czasy wykonania napisanych wyrażeń.
+```{r echo = FALSE}
+rozwiazanie6_sqldf <- function()
+{
+  sqldf6_wynik <- sqldf("SELECT UpVotesTab.PostId, UpVotesTab.UpVotes, IFNULL(DownVotesTab.DownVotes, 0) AS DownVotes
+      FROM
+      (
+      SELECT PostId, COUNT(*) AS UpVotes FROM Votes
+      WHERE VoteTypeId = 2 GROUP BY PostId
+      ) AS UpVotesTab
+      LEFT JOIN
+      (
+      SELECT PostId, COUNT(*) AS DownVotes FROM Votes
+      WHERE VoteTypeId = 3 GROUP BY PostId
+      ) AS DownVotesTab
+      ON UpVotesTab.PostId = DownVotesTab.PostId")
+  
+  return(sqldf6_wynik)
+}
+
+rozwiazanie6_bazowe <- function()
+{
+  df6_left <- Votes[Votes$VoteTypeId == 2, ]
+
+df6_UpVotesTab <- structure(aggregate(df6_left["PostId"], by = df6_left["PostId"],
+                                      FUN = length),
+                            names = c("PostId", "UpVotes"))
+
+df6_right <- Votes[Votes$VoteTypeId == 3, ]
+
+df6_DownVotesTab <- structure(aggregate(df6_right["PostId"], by = df6_right["PostId"],
+                                        FUN = length),
+                              names = c("PostId", "DownVotes"))
+
+df6_merge <- merge(df6_UpVotesTab, df6_DownVotesTab, all.x = TRUE, all.y = FALSE, by = "PostId") 
+
+wart_null <- is.na(df6_merge["DownVotes"])
+
+df6_merge$DownVotes[wart_null] <- as.integer(0)
+
+df6_wynik <- df6_merge
+
+return(df6_wynik)
+}
+
+rozwiazanie6_dplyr <- function()
+{
+  dp6_UpVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    UpVotes = n(),
+  ) %>% filter(VoteTypeId == 2),
+  PostId,
+  UpVotes
+)
+
+dp6_DownVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    DownVotes = n(),
+  ) %>% filter(VoteTypeId == 3),
+  PostId,
+  DownVotes
+)
+
+dp6_merge <- left_join(dp6_UpVotesTab, dp6_DownVotesTab, by = "PostId")
+
+dp6_wart_null <- is.na(dp6_merge["DownVotes"])
+
+dp6_merge$DownVotes[dp6_wart_null] <- as.integer(0)
+
+dp6_wynik <- dp6_merge
+
+return(dp6_wynik)
+}
+
+rozwiazanie6_datatable <- function()
+{
+  dt6_UpVotesTab <- as.data.table(Votes)[VoteTypeId == 2, .(UpVotes = .N), by = PostId][order(PostId)]
+
+dt6_DownVotesTab <- as.data.table(Votes)[VoteTypeId == 3, .(DownVotes = .N), by = PostId][order(PostId)]
+
+dt6_merge <- merge.data.table(dt6_UpVotesTab, dt6_DownVotesTab, all.x = TRUE, all.y = FALSE,
+                              by = "PostId")
+
+dt6_wart_null <- is.na(dt6_merge$DownVotes)
+
+dt6_merge$DownVotes[dt6_wart_null] <- as.integer(0)
+
+dt6_wynik <- dt6_merge
+
+return(dt6_wynik)
+}
+```
+```{r}
+microbenchmark::microbenchmark(
+  sqldf6 = rozwiazanie6_sqldf,
+  base6 = rozwiazanie6_bazowe,
+  dplyr6 = rozwiazanie6_dplyr,
+  data.table6 = rozwiazanie6_datatable
+)
+```
+Tym razem szybkość metody z pakietem ```data.table``` wyraźnie przeważa nad pozostałymi.
+
+Zatem tutaj najszybszą metodą jest metoda z pakietem ```data.table```, a najwolniejszą z pakietem ```dplyr```.
+
+# Zadanie 7.
+
+## 1. sqldf::sqldf().
+```{r}
+sqldf7_wynik <- sqldf("SELECT PostId, UpVotes-DownVotes AS Votes FROM (
+      SELECT UpVotesTab.PostId, UpVotesTab.UpVotes, IFNULL(DownVotesTab.DownVotes, 0) AS DownVotes
+      FROM
+      (
+      SELECT PostId, COUNT(*) AS UpVotes FROM Votes
+      WHERE VoteTypeId = 2 GROUP BY PostId
+      ) AS UpVotesTab
+      LEFT JOIN
+      (
+      SELECT PostId, COUNT(*) AS DownVotes
+      FROM Votes WHERE VoteTypeId = 3 GROUP BY PostId
+      ) AS DownVotesTab
+      ON UpVotesTab.PostId = DownVotesTab.PostId
+      
+      UNION
+      
+      SELECT DownVotesTab.PostId, IFNULL(UpVotesTab.UpVotes, 0) AS UpVotes, DownVotesTab.DownVotes
+      FROM
+      (
+      SELECT PostId, COUNT(*) AS DownVotes FROM Votes
+      WHERE VoteTypeId = 3 GROUP BY PostId
+      ) AS DownVotesTab
+      LEFT JOIN
+      (
+      SELECT PostId, COUNT(*) AS UpVotes FROM Votes
+      WHERE VoteTypeId = 2 GROUP BY PostId
+      ) AS UpVotesTab
+      ON DownVotesTab.PostId = UpVotesTab.PostId
+      )")
+```
+
+```{r}
+head(sqldf7_wynik)
+```
+
+## 2. Tylko funkcje bazowe.
+
+### a) Pierwsza ramka.
+```{r}
+df7_poz_left <- Votes[Votes$VoteTypeId == 2, ]
+
+df7_poz_UpVotesTab <- structure(aggregate(df7_poz_left["PostId"], by = df7_poz_left["PostId"],
+                                      FUN = length),
+                            names = c("PostId", "UpVotes"))
+
+df7_poz_right <- Votes[Votes$VoteTypeId == 3, ]
+
+df7_poz_DownVotesTab <- structure(aggregate(df7_poz_right["PostId"], by = df7_poz_right["PostId"],
+                                        FUN = length),
+                              names = c("PostId", "DownVotes"))
+
+df7_poz_merge <- merge(df7_poz_UpVotesTab, df7_poz_DownVotesTab, all.x = TRUE, all.y = FALSE, by = "PostId") 
+
+df7_poz_wart_null <- is.na(df7_poz_merge["DownVotes"])
+
+df7_poz_merge$DownVotes[df7_poz_wart_null] <- as.integer(0)
+
+df7_poz <- df7_poz_merge
+```
+
+### b) Druga ramka.
+```{r}
+df7_neg_left <- Votes[Votes$VoteTypeId == 3, ]
+
+df7_neg_DownVotesTab <- structure(aggregate(df7_neg_left["PostId"], by = df7_neg_left["PostId"],
+                                          FUN = length),
+                                names = c("PostId", "DownVotes"))
+
+df7_neg_right <- Votes[Votes$VoteTypeId == 2, ]
+
+df7_neg_UpVotesTab <- structure(aggregate(df7_neg_right["PostId"], by = df7_neg_right["PostId"],
+                                            FUN = length),
+                                  names = c("PostId", "UpVotes"))
+
+df7_neg_merge <- merge(df7_neg_DownVotesTab, df7_neg_UpVotesTab, all.x = TRUE, all.y = FALSE, by = "PostId") 
+
+df7_neg_wart_null <- is.na(df7_neg_merge["UpVotes"])
+
+df7_neg_merge$UpVotes[df7_neg_wart_null] <- as.integer(0)
+
+df7_neg <- df7_neg_merge
+```
+### c) Suma obu ramek.
+```{r}
+df7_union <- union(df7_poz, df7_neg)
+```
+
+```{r} 
+head(df7_union)
+```
+Widzimy, że kolumną "DownVotes" jest 3 kolumna z ramki ```df7_union```.
+```{r}
+df7_wynik <- df7_union[, -3] 
+
+df7_wynik <- structure(df7_wynik, names = c("PostId", "Votes"))
+```
+
+```{r}
+head(df7_wynik)
+```
+
+```{r}
+dplyr::all_equal(sqldf7_wynik, df7_wynik)
+```
+Nie do końca wyniki się zgadzają, gdyż program pokazuje, że jest parę wierszy w kolumnie ```x``` nie znajdujących się w kolumnie ```y```.
+
+## 3. dplyr.
+### a) Pierwsza ramka.
+```{r}
+dp7_poz_UpVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    UpVotes = n(),
+  ) %>% filter(VoteTypeId == 2),
+  PostId,
+  UpVotes
+)
+
+dp7_poz_DownVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    DownVotes = n(),
+  ) %>% filter(VoteTypeId == 3),
+  PostId,
+  DownVotes
+)
+
+dp7_poz_merge <- left_join(dp7_poz_UpVotesTab, dp7_poz_DownVotesTab, by = "PostId")
+
+dp7_poz_wart_null <- is.na(dp7_poz_merge["DownVotes"])
+
+dp7_poz_merge$DownVotes[dp7_poz_wart_null] <- as.integer(0)
+
+dp7_poz <- dp7_poz_merge
+```
+
+### b) Druga ramka.
+```{r}
+dp7_neg_DownVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    DownVotes = n(),
+  ) %>% filter(VoteTypeId == 3),
+  PostId,
+  DownVotes
+)
+
+dp7_neg_UpVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    UpVotes = n(),
+  ) %>% filter(VoteTypeId == 2),
+  PostId,
+  UpVotes
+)
+
+dp7_neg_merge <- left_join(dp7_neg_DownVotesTab, dp7_neg_UpVotesTab, by = "PostId")
+
+dp7_neg_wart_null <- is.na(dp7_neg_merge["UpVotes"])
+
+dp7_neg_merge$UpVotes[dp7_neg_wart_null] <- as.integer(0)
+
+dp7_neg <- dp7_neg_merge
+```
+
+### c) Suma obu ramek.
+```{r}
+dp7_union <- union(dp7_poz, dp7_neg)
+
+dp7_wynik <- dp7_union[, -3]
+
+dp7_wynik <- select(dp7_wynik, PostId, Votes = UpVotes)
+```
+
+```{r}
+head(dp7_wynik)
+```
+
+```{r}
+dplyr::all_equal(sqldf7_wynik, dp7_wynik)
+```
+Porównując wyniki z metodą, z pakietem ```sqldf```, do wyników z metodą, z pakietem ```dplyr``` jest tak samo, jak w przypadku ```sqldf``` i funkcji bazowych.
+
+Ale:
+```{r}
+dplyr::all_equal(df7_wynik, dp7_wynik)
+```
+Więc wyniki z metody, z funkcjami bazowymi są takie same jak z metody, z pakietem ```dplyr```.
+
+## 4. data.table.
+### a) Pierwsza ramka.
+```{r}
+dt7_poz_UpVotesTab <- as.data.table(Votes)[VoteTypeId == 2, .(UpVotes = .N), by = PostId][order(PostId)]
+
+dt7_poz_DownVotesTab <- as.data.table(Votes)[VoteTypeId == 3, .(DownVotes = .N), by = PostId][order(PostId)]
+
+dt7_poz_merge <- merge.data.table(dt7_poz_UpVotesTab, dt7_poz_DownVotesTab, all.x = TRUE, all.y = FALSE,
+                              by = "PostId")
+
+dt7_poz_wart_null <- is.na(dt7_poz_merge$DownVotes)
+
+dt7_poz_merge$DownVotes[dt7_poz_wart_null] <- as.integer(0)
+
+dt7_poz <- as.data.table(dt7_poz_merge)
+```
+
+### b) Druga ramka.
+```{r}
+dt7_neg_DownVotesTab <- as.data.table(Votes)[VoteTypeId == 3, .(DownVotes = .N), by = PostId][order(PostId)]
+
+dt7_neg_UpVotesTab <- as.data.table(Votes)[VoteTypeId == 2, .(UpVotes = .N), by = PostId][order(PostId)]
+
+dt7_neg_merge <- merge.data.table(dt7_neg_DownVotesTab, dt7_neg_UpVotesTab, all.x = TRUE, all.y = FALSE,
+                                  by = "PostId")
+
+dt7_neg_wart_null <- is.na(dt7_neg_merge$UpVotes)
+
+dt7_neg_merge$UpVotes[dt7_neg_wart_null] <- as.integer(0)
+
+dt7_neg <- as.data.table(dt7_neg_merge)
+```
+
+### c) Suma obu ramek.
+Funkcją do sumy ramek dla pakietu ```data.table``` jest funkcja ```funion```.
+Żeby użyć funkcji funion, nazwy kolumn w obu ramkach musza byc takie same nazwy kolumn.
+```{r}
+setnames(dt7_poz, "DownVotes", "aa")
+setnames(dt7_poz, "UpVotes", "DownVotes")
+setnames(dt7_poz, "aa", "UpVotes")
+
+dt7_union <- funion(dt7_poz, dt7_neg)
+```
+
+```{r}
+dt7_wynik <- dt7_union[, -3]
+
+setnames(dt7_wynik, "DownVotes", "Votes")
+
+dt7_wynik
+```
+
+```{r}
+head(dt7_wynik)
+```
+
+```{r}
+dplyr::all_equal(sqldf7_wynik, dt7_wynik)
+```
+Mamy komunikat mówiący nam, że jest różna liczba wierszy z ramki otrzymanej metodą z pakietem ```sqldf``` od liczby wierszy z ramki otrzymanej metodą z pakietem ```data.table```.
+
+```{r}
+dplyr::all_equal(dp7_wynik, dt7_wynik)
+```
+
+Dla ```dplyr``` i ```data.tabla``` program wyświetla taki sam komunikat jak w przypadku ```sqldf``` i ```data.table```.
+
+Zatem w przypadku funkcji bazowych i ```data.table``` będzie to samo.
+
+Czyli tu metody inne niż z polecenia ```sqldf``` dają inne wyniki.
+
+## 5. Czasy wykonania napisanych wyrażeń.
+```{r echo = FALSE}
+rozwiazanie7_sqldf <- function()
+{
+  sqldf7_wynik <- sqldf("SELECT PostId, UpVotes-DownVotes AS Votes FROM (
+      SELECT UpVotesTab.PostId, UpVotesTab.UpVotes, IFNULL(DownVotesTab.DownVotes, 0) AS DownVotes
+      FROM
+      (
+      SELECT PostId, COUNT(*) AS UpVotes FROM Votes
+      WHERE VoteTypeId = 2 GROUP BY PostId
+      ) AS UpVotesTab
+      LEFT JOIN
+      (
+      SELECT PostId, COUNT(*) AS DownVotes
+      FROM Votes WHERE VoteTypeId = 3 GROUP BY PostId
+      ) AS DownVotesTab
+      ON UpVotesTab.PostId = DownVotesTab.PostId
+      
+      UNION
+      
+      SELECT DownVotesTab.PostId, IFNULL(UpVotesTab.UpVotes, 0) AS UpVotes, DownVotesTab.DownVotes
+      FROM
+      (
+      SELECT PostId, COUNT(*) AS DownVotes FROM Votes
+      WHERE VoteTypeId = 3 GROUP BY PostId
+      ) AS DownVotesTab
+      LEFT JOIN
+      (
+      SELECT PostId, COUNT(*) AS UpVotes FROM Votes
+      WHERE VoteTypeId = 2 GROUP BY PostId
+      ) AS UpVotesTab
+      ON DownVotesTab.PostId = UpVotesTab.PostId
+      )")
+  
+  return(sqldf7_wynik)
+}
+
+rozwiazanie7_bazowe <- function()
+{
+  df7_poz_left <- Votes[Votes$VoteTypeId == 2, ]
+
+df7_poz_UpVotesTab <- structure(aggregate(df7_poz_left["PostId"], by = df7_poz_left["PostId"],
+                                      FUN = length),
+                            names = c("PostId", "UpVotes"))
+
+df7_poz_right <- Votes[Votes$VoteTypeId == 3, ]
+
+df7_poz_DownVotesTab <- structure(aggregate(df7_poz_right["PostId"], by = df7_poz_right["PostId"],
+                                        FUN = length),
+                              names = c("PostId", "DownVotes"))
+
+df7_poz_merge <- merge(df7_poz_UpVotesTab, df7_poz_DownVotesTab, all.x = TRUE, all.y = FALSE, by = "PostId") 
+
+df7_poz_wart_null <- is.na(df7_poz_merge["DownVotes"])
+
+df7_poz_merge$DownVotes[df7_poz_wart_null] <- as.integer(0)
+
+df7_poz <- df7_poz_merge
+
+df7_neg_left <- Votes[Votes$VoteTypeId == 3, ]
+
+df7_neg_DownVotesTab <- structure(aggregate(df7_neg_left["PostId"], by = df7_neg_left["PostId"],
+                                          FUN = length),
+                                names = c("PostId", "DownVotes"))
+
+df7_neg_right <- Votes[Votes$VoteTypeId == 2, ]
+
+df7_neg_UpVotesTab <- structure(aggregate(df7_neg_right["PostId"], by = df7_neg_right["PostId"],
+                                            FUN = length),
+                                  names = c("PostId", "UpVotes"))
+
+df7_neg_merge <- merge(df7_neg_DownVotesTab, df7_neg_UpVotesTab, all.x = TRUE, all.y = FALSE, by = "PostId") 
+
+df7_neg_wart_null <- is.na(df7_neg_merge["UpVotes"])
+
+df7_neg_merge$UpVotes[df7_neg_wart_null] <- as.integer(0)
+
+df7_neg <- df7_neg_merge
+
+df7_union <- union(df7_poz, df7_neg)
+
+df7_wynik <- df7_union[, -3] 
+
+df7_wynik <- structure(df7_wynik, names = c("PostId", "Votes"))
+
+return(df7_wynik)
+}
+
+rozwiazanie7_dplyr <- function()
+{
+  dp7_poz_UpVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    UpVotes = n(),
+  ) %>% filter(VoteTypeId == 2),
+  PostId,
+  UpVotes
+)
+
+dp7_poz_DownVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    DownVotes = n(),
+  ) %>% filter(VoteTypeId == 3),
+  PostId,
+  DownVotes
+)
+
+dp7_poz_merge <- left_join(dp7_poz_UpVotesTab, dp7_poz_DownVotesTab, by = "PostId")
+
+dp7_poz_wart_null <- is.na(dp7_poz_merge["DownVotes"])
+
+dp7_poz_merge$DownVotes[dp7_poz_wart_null] <- as.integer(0)
+
+dp7_poz <- dp7_poz_merge
+
+dp7_neg_DownVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    DownVotes = n(),
+  ) %>% filter(VoteTypeId == 3),
+  PostId,
+  DownVotes
+)
+
+dp7_neg_UpVotesTab <- select(
+  summarise(
+    group_by(
+      Votes,
+      PostId,
+      VoteTypeId
+    ),
+    UpVotes = n(),
+  ) %>% filter(VoteTypeId == 2),
+  PostId,
+  UpVotes
+)
+
+dp7_neg_merge <- left_join(dp7_neg_DownVotesTab, dp7_neg_UpVotesTab, by = "PostId")
+
+dp7_neg_wart_null <- is.na(dp7_neg_merge["UpVotes"])
+
+dp7_neg_merge$UpVotes[dp7_neg_wart_null] <- as.integer(0)
+
+dp7_neg <- dp7_neg_merge
+
+dp7_union <- union(dp7_poz, dp7_neg)
+
+dp7_wynik <- dp7_union[, -3]
+
+dp7_wynik <- select(dp7_wynik, PostId, Votes = UpVotes)
+
+return(dp7_wynik)
+}
+
+rozwiazanie7_datatable <- function()
+{
+  dt7_poz_UpVotesTab <- as.data.table(Votes)[VoteTypeId == 2, .(UpVotes = .N), by = PostId][order(PostId)]
+
+dt7_poz_DownVotesTab <- as.data.table(Votes)[VoteTypeId == 3, .(DownVotes = .N), by = PostId][order(PostId)]
+
+dt7_poz_merge <- merge.data.table(dt7_poz_UpVotesTab, dt7_poz_DownVotesTab, all.x = TRUE, all.y = FALSE,
+                              by = "PostId")
+
+dt7_poz_wart_null <- is.na(dt7_poz_merge$DownVotes)
+
+dt7_poz_merge$DownVotes[dt7_poz_wart_null] <- as.integer(0)
+
+dt7_poz <- as.data.table(dt7_poz_merge)
+
+dt7_neg_DownVotesTab <- as.data.table(Votes)[VoteTypeId == 3, .(DownVotes = .N), by = PostId][order(PostId)]
+
+dt7_neg_UpVotesTab <- as.data.table(Votes)[VoteTypeId == 2, .(UpVotes = .N), by = PostId][order(PostId)]
+
+dt7_neg_merge <- merge.data.table(dt7_neg_DownVotesTab, dt7_neg_UpVotesTab, all.x = TRUE, all.y = FALSE,
+                                  by = "PostId")
+
+dt7_neg_wart_null <- is.na(dt7_neg_merge$UpVotes)
+
+dt7_neg_merge$UpVotes[dt7_neg_wart_null] <- as.integer(0)
+
+dt7_neg <- as.data.table(dt7_neg_merge)
+
+setnames(dt7_poz, "DownVotes", "aa")
+setnames(dt7_poz, "UpVotes", "DownVotes")
+setnames(dt7_poz, "aa", "UpVotes")
+
+dt7_union <- funion(dt7_poz, dt7_neg)
+
+dt7_wynik <- dt7_union[, -3]
+
+setnames(dt7_wynik, "DownVotes", "Votes")
+
+dt7_wynik
+
+return(dt7_wynik)
+}
+```
+```{r}
+microbenchmark::microbenchmark(
+  sqldf7 = rozwiazanie7_sqldf,
+  base7 = rozwiazanie7_bazowe,
+  dplyr7 = rozwiazanie7_dplyr,
+  data.table7 = rozwiazanie7_datatable
+)
+```
+Zatem metoda z pakietem ```sqldf``` jest najszybsza, a z pakietem ```data.table``` najwolniejsza.
